@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tools</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #111318;
+      color: #d4d8e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      padding: 48px 40px 0;
+      max-width: 960px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #e8eaf0;
+      letter-spacing: -0.5px;
+    }
+
+    header p {
+      margin-top: 8px;
+      font-size: 14px;
+      color: #555c70;
+      line-height: 1.6;
+    }
+
+    main {
+      flex: 1;
+      max-width: 960px;
+      margin: 0 auto;
+      width: 100%;
+      padding: 40px 40px 64px;
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #3a4057;
+      margin-bottom: 16px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: #1a1e28;
+      border: 1px solid #2a2f3d;
+      border-radius: 10px;
+      padding: 24px;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    }
+
+    .card:hover {
+      border-color: #4f7ef8;
+      background: #1e2333;
+      transform: translateY(-2px);
+    }
+
+    .card-icon {
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #e8eaf0;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: #666c80;
+      line-height: 1.5;
+      flex: 1;
+    }
+
+    .card-tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(79,126,248,0.12);
+      color: #4f7ef8;
+      border: 1px solid rgba(79,126,248,0.2);
+      align-self: flex-start;
+    }
+
+    footer {
+      text-align: center;
+      padding: 24px;
+      font-size: 11px;
+      color: #333a4d;
+      border-top: 1px solid #1a1e28;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Tools</h1>
+  <p>Small, focused utilities that run entirely in the browser — no installs, no accounts.</p>
+</header>
+
+<main>
+  <div class="section-label">CNC &amp; Fabrication</div>
+  <div class="grid">
+
+    <a class="card" href="gcode-feed-rate/">
+      <div class="card-icon">⚙️</div>
+      <div class="card-title">G-Code Feed Rate Modifier</div>
+      <div class="card-desc">Visualize a G-code tool path, select regions, and override feed rates — without splitting the file in your CAM software.</div>
+      <span class="card-tag">G-Code</span>
+    </a>
+
+  </div>
+</main>
+
+<footer>
+  All tools run locally in your browser. Nothing is uploaded anywhere.
+</footer>
+
+</body>
+</html>

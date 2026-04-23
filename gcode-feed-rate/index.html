@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>G-Code Feed Rate Modifier</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #111318;
+      color: #d4d8e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #1a1e28;
+      border-bottom: 1px solid #2a2f3d;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #e8eaf0;
+      letter-spacing: 0.3px;
+      margin-right: 4px;
+    }
+    .header-sep { flex: 1; }
+    .header-hint {
+      font-size: 11px;
+      color: #555c70;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: opacity 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+    .btn:disabled { opacity: 0.35; cursor: default; }
+    .btn:not(:disabled):hover { opacity: 0.85; }
+    .btn-primary   { background: #4f7ef8; color: #fff; }
+    .btn-secondary { background: #252b3b; color: #c8ccd8; border: 1px solid #333a4d; }
+    .btn-danger    { background: #c84444; color: #fff; }
+    .btn-sm { padding: 5px 10px; font-size: 11px; }
+
+    /* ── Layout ── */
+    .workspace {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 280px;
+      flex-shrink: 0;
+      background: #1a1e28;
+      border-right: 1px solid #2a2f3d;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    .sidebar::-webkit-scrollbar { width: 5px; }
+    .sidebar::-webkit-scrollbar-track { background: transparent; }
+    .sidebar::-webkit-scrollbar-thumb { background: #2a2f3d; border-radius: 3px; }
+
+    .panel {
+      padding: 14px 16px;
+      border-bottom: 1px solid #2a2f3d;
+    }
+    .panel-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #555c70;
+      margin-bottom: 10px;
+    }
+
+    /* ── Import panel ── */
+    .drop-zone {
+      border: 1.5px dashed #333a4d;
+      border-radius: 6px;
+      padding: 20px 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      margin-bottom: 10px;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: #4f7ef8;
+      background: rgba(79,126,248,0.05);
+    }
+    .drop-zone-icon { font-size: 22px; margin-bottom: 6px; }
+    .drop-zone-label { font-size: 12px; color: #888; }
+    .drop-zone-label span { color: #4f7ef8; }
+    input[type="file"] { display: none; }
+
+    .divider-or {
+      text-align: center;
+      font-size: 11px;
+      color: #444;
+      margin: 8px 0;
+      position: relative;
+    }
+    .divider-or::before, .divider-or::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 38%;
+      height: 1px;
+      background: #2a2f3d;
+    }
+    .divider-or::before { left: 0; }
+    .divider-or::after { right: 0; }
+
+    textarea {
+      width: 100%;
+      background: #111318;
+      color: #88cc88;
+      border: 1px solid #2a2f3d;
+      border-radius: 5px;
+      padding: 8px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 10.5px;
+      resize: vertical;
+      min-height: 90px;
+      line-height: 1.5;
+    }
+    textarea:focus { outline: none; border-color: #4f7ef8; }
+
+    /* ── Field ── */
+    .field { margin-bottom: 10px; }
+    .field:last-child { margin-bottom: 0; }
+    .field-label { font-size: 11px; color: #666c80; margin-bottom: 4px; }
+    input[type="number"], input[type="text"] {
+      width: 100%;
+      background: #111318;
+      color: #d4d8e0;
+      border: 1px solid #2a2f3d;
+      border-radius: 5px;
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+    input[type="number"]:focus, input[type="text"]:focus {
+      outline: none;
+      border-color: #4f7ef8;
+    }
+
+    /* ── Info chips ── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .info-chip {
+      background: #111318;
+      border: 1px solid #2a2f3d;
+      border-radius: 5px;
+      padding: 7px 10px;
+    }
+    .info-chip-label { font-size: 10px; color: #555c70; margin-bottom: 2px; }
+    .info-chip-val   { font-size: 13px; font-weight: 600; color: #e8eaf0; }
+
+    /* ── Tool selector ── */
+    .tool-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .tool-btn {
+      flex: 1;
+      padding: 7px 6px;
+      background: #111318;
+      border: 1.5px solid #2a2f3d;
+      border-radius: 5px;
+      color: #666c80;
+      font-size: 12px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+    }
+    .tool-btn:hover { border-color: #4f7ef8; color: #c8ccd8; }
+    .tool-btn.active { background: rgba(79,126,248,0.12); border-color: #4f7ef8; color: #4f7ef8; }
+    .tool-hint { font-size: 10.5px; color: #444; line-height: 1.4; }
+
+    /* ── Selection panel ── */
+    .sel-highlight {
+      background: rgba(255,200,50,0.07);
+      border: 1px solid rgba(255,200,50,0.25);
+      border-radius: 5px;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+    .sel-highlight b { color: #ffd966; }
+
+    .apply-row { display: flex; gap: 6px; }
+
+    /* ── Changes list ── */
+    .change-item {
+      background: #111318;
+      border: 1px solid #2a2f3d;
+      border-radius: 5px;
+      padding: 7px 10px;
+      font-size: 11px;
+      margin-bottom: 5px;
+      color: #888;
+    }
+    .change-item .arrow { color: #4f7ef8; }
+    .change-item .new-val { color: #4fca82; font-weight: 600; }
+
+    /* ── Feed rate legend ── */
+    .legend-bar {
+      width: 100%;
+      height: 10px;
+      border-radius: 3px;
+      margin-bottom: 4px;
+    }
+    .legend-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #555c70;
+    }
+
+    /* ── Canvas area ── */
+    .canvas-wrap {
+      flex: 1;
+      position: relative;
+      background: #0e1018;
+      overflow: hidden;
+    }
+    canvas {
+      position: absolute;
+      top: 0; left: 0;
+      display: block;
+    }
+
+    /* ── Floating fit button ── */
+    .canvas-overlay-btns {
+      position: absolute;
+      top: 12px; right: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* ── Status bar ── */
+    footer {
+      background: #1a1e28;
+      border-top: 1px solid #2a2f3d;
+      padding: 4px 14px;
+      display: flex;
+      gap: 20px;
+      font-size: 11px;
+      color: #555c70;
+      flex-shrink: 0;
+    }
+    footer span b { color: #888; }
+
+    /* ── Tooltip ── */
+    #tooltip {
+      position: absolute;
+      background: #1a1e28;
+      border: 1px solid #2a2f3d;
+      border-radius: 5px;
+      padding: 5px 9px;
+      font-size: 11px;
+      color: #c8ccd8;
+      pointer-events: none;
+      display: none;
+      z-index: 10;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>G-Code Feed Rate Modifier</h1>
+  <label for="fileInput" class="btn btn-secondary">Open File</label>
+  <input type="file" id="fileInput" accept=".nc,.gcode,.tap,.cnc,.ngc,.txt">
+  <div class="header-sep"></div>
+  <span class="header-hint" id="headerHint">Load a G-code file to begin</span>
+  <button class="btn btn-primary" id="exportBtn" disabled onclick="exportGCode()">Download Modified</button>
+</header>
+
+<div class="workspace">
+
+  <!-- ── Sidebar ── -->
+  <div class="sidebar">
+
+    <!-- Import -->
+    <div class="panel">
+      <div class="panel-title">Import</div>
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+        <div class="drop-zone-icon">📂</div>
+        <div class="drop-zone-label">Drop file here or <span>browse</span></div>
+        <div class="drop-zone-label" style="margin-top:3px;font-size:10px">.nc .gcode .tap .cnc</div>
+      </div>
+      <div class="divider-or">or paste below</div>
+      <textarea id="gcodeInput" placeholder="Paste G-code here…" rows="6" spellcheck="false"></textarea>
+      <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="loadFromTextarea()">Load G-Code</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="panel" id="statsPanel" style="display:none">
+      <div class="panel-title">Path Info</div>
+      <div class="info-grid">
+        <div class="info-chip">
+          <div class="info-chip-label">Total moves</div>
+          <div class="info-chip-val" id="statTotal">—</div>
+        </div>
+        <div class="info-chip">
+          <div class="info-chip-label">Feed moves</div>
+          <div class="info-chip-val" id="statFeed">—</div>
+        </div>
+        <div class="info-chip">
+          <div class="info-chip-label">Rapid moves</div>
+          <div class="info-chip-val" id="statRapid">—</div>
+        </div>
+        <div class="info-chip">
+          <div class="info-chip-label">Feed rates</div>
+          <div class="info-chip-val" id="statRates">—</div>
+        </div>
+      </div>
+      <div id="legendWrap" style="display:none">
+        <div class="panel-title" style="margin-bottom:6px">Feed Rate Color Map</div>
+        <canvas class="legend-bar" id="legendCanvas" height="10"></canvas>
+        <div class="legend-labels">
+          <span id="legendMin">—</span>
+          <span>slow → fast</span>
+          <span id="legendMax">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tool -->
+    <div class="panel">
+      <div class="panel-title">Tool</div>
+      <div class="tool-row">
+        <button class="tool-btn active" id="toolPan" onclick="setTool('pan')">✋ Pan</button>
+        <button class="tool-btn" id="toolSelect" onclick="setTool('select')">⬚ Select Region</button>
+      </div>
+      <div class="tool-hint" id="toolHint">Drag to pan the view. Scroll to zoom.</div>
+    </div>
+
+    <!-- Selection -->
+    <div class="panel" id="selPanel" style="display:none">
+      <div class="panel-title">Selection</div>
+      <div class="sel-highlight">
+        <b id="selCount">0</b> cutting moves selected<br>
+        <span style="color:#888;font-size:11px">Current feed: <b id="selFeedRange" style="color:#ffd966">—</b></span>
+      </div>
+      <div class="field">
+        <div class="field-label">New Feed Rate (units/min)</div>
+        <input type="number" id="newFeedRate" min="1" step="10" placeholder="e.g. 800">
+      </div>
+      <div class="apply-row">
+        <button class="btn btn-primary" style="flex:1" onclick="applyFeedRate()">Apply</button>
+        <button class="btn btn-secondary btn-sm" onclick="clearSelection()">Clear</button>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:#555c70">
+        Hold <kbd style="background:#111318;border:1px solid #2a2f3d;border-radius:3px;padding:1px 5px;font-size:10px">Shift</kbd> while dragging to add to selection.
+      </div>
+    </div>
+
+    <!-- Changes -->
+    <div class="panel" id="changesPanel" style="display:none">
+      <div class="panel-title">Changes</div>
+      <div id="changesList"></div>
+      <button class="btn btn-danger btn-sm" style="width:100%;margin-top:6px" onclick="resetAllChanges()">Reset All Changes</button>
+    </div>
+
+  </div>
+
+  <!-- ── Canvas area ── -->
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="mainCanvas"></canvas>
+    <div id="tooltip"></div>
+    <div class="canvas-overlay-btns">
+      <button class="btn btn-secondary btn-sm" onclick="fitToView()" title="Fit to view">⊡ Fit</button>
+      <button class="btn btn-secondary btn-sm" onclick="toggleRapids()" id="rapidToggleBtn" title="Toggle rapids">Rapids ✓</button>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <span><b>X:</b> <span id="fX">—</span></span>
+  <span><b>Y:</b> <span id="fY">—</span></span>
+  <span><b>Zoom:</b> <span id="fZoom">—</span></span>
+  <span id="fMsg">Load a G-code file to begin</span>
+</footer>
+
+<script>
+// ════════════════════════════════════════════════════════════
+// G-CODE PARSER
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Move object shape:
+ * {
+ *   lineIndex: number,          // index into originalLines[]
+ *   type: 'rapid'|'linear'|'arc_cw'|'arc_ccw',
+ *   x0,y0,z0: number,          // start position
+ *   x,y,z: number,             // end position
+ *   arcCx,arcCy: number|null,  // arc center (world coords), null for linear
+ *   feedRate: number|null,     // null for rapids
+ *   isRapid: boolean,
+ *   selected: boolean,
+ *   modified: boolean,
+ *   originalFeed: number|null,
+ * }
+ */
+
+let moves = [];
+let originalLines = [];
+let modifiedLines = [];
+let changes = [];
+let showRapids = true;
+
+function parseGCode(text) {
+  const lines = text.split('\n');
+  const result = [];
+
+  let cx = 0, cy = 0, cz = 0;
+  let currentFeed = 0;
+  let absolute = true;
+  let modalMove = null; // last G0/G1/G2/G3 seen
+
+  for (let i = 0; i < lines.length; i++) {
+    let line = lines[i];
+
+    // strip inline comments
+    const clean = line
+      .replace(/\(.*?\)/g, '')
+      .replace(/;.*$/, '')
+      .trim()
+      .toUpperCase();
+
+    if (!clean) continue;
+
+    // Parse all G-codes on this line as integers (handles G0/G00, compact or spaced)
+    const gNums = new Set([...clean.matchAll(/G(\d+)/g)].map(m => parseInt(m[1])));
+
+    // Modal: distance mode
+    if (gNums.has(90)) absolute = true;
+    if (gNums.has(91)) absolute = false;
+
+    // Feed rate on this line
+    const fMatch = clean.match(/F([\d.]+)/);
+    if (fMatch) currentFeed = parseFloat(fMatch[1]);
+
+    // Move type — later G-code on a line wins via sequential if-checks
+    if (gNums.has(0))  modalMove = 'rapid';
+    if (gNums.has(1))  modalMove = 'linear';
+    if (gNums.has(2))  modalMove = 'arc_cw';
+    if (gNums.has(3))  modalMove = 'arc_ccw';
+
+    if (!modalMove) continue;
+
+    // Coordinates — [+-]? handles VCarve's explicit + signs (e.g. I+6.512 J+0.731)
+    const xM = clean.match(/X([+-]?[\d.]+)/);
+    const yM = clean.match(/Y([+-]?[\d.]+)/);
+    const zM = clean.match(/Z([+-]?[\d.]+)/);
+
+    const rawX = xM ? parseFloat(xM[1]) : (absolute ? cx : 0);
+    const rawY = yM ? parseFloat(yM[1]) : (absolute ? cy : 0);
+    const rawZ = zM ? parseFloat(zM[1]) : (absolute ? cz : 0);
+
+    const tx = absolute ? rawX : cx + rawX;
+    const ty = absolute ? rawY : cy + rawY;
+    const tz = absolute ? rawZ : cz + rawZ;
+
+    // Skip no-op moves
+    if (tx === cx && ty === cy && tz === cz) continue;
+
+    // Arc center — no \b so compact format works
+    let arcCx = null, arcCy = null;
+    if (modalMove === 'arc_cw' || modalMove === 'arc_ccw') {
+      const iM = clean.match(/I([+-]?[\d.]+)/);
+      const jM = clean.match(/J([+-]?[\d.]+)/);
+      const rM = clean.match(/R([+-]?[\d.]+)/);
+
+      if (iM || jM) {
+        arcCx = cx + (iM ? parseFloat(iM[1]) : 0);
+        arcCy = cy + (jM ? parseFloat(jM[1]) : 0);
+      } else if (rM) {
+        const r = Math.abs(parseFloat(rM[1]));
+        const dx = tx - cx, dy = ty - cy;
+        const d = Math.sqrt(dx*dx + dy*dy);
+        if (d > 0 && r >= d/2) {
+          const h = Math.sqrt(r*r - (d*d)/4);
+          // For G2+R>0 the center is to the right of travel; derive correct perpendicular side.
+          const sign = (modalMove === 'arc_cw' ? -1 : 1) * (parseFloat(rM[1]) >= 0 ? 1 : -1);
+          arcCx = (cx + tx)/2 + sign * h * (dy/d);
+          arcCy = (cy + ty)/2 + sign * h * (-dx/d);
+        }
+      }
+    }
+
+    const isRapid = modalMove === 'rapid';
+    result.push({
+      lineIndex: i,
+      type: modalMove,
+      x0: cx, y0: cy, z0: cz,
+      x: tx,  y: ty,  z: tz,
+      arcCx, arcCy,
+      feedRate: isRapid ? null : currentFeed,
+      isRapid,
+      selected: false,
+      modified: false,
+      originalFeed: isRapid ? null : currentFeed,
+    });
+
+    cx = tx; cy = ty; cz = tz;
+  }
+
+  return result;
+}
+
+
+// ════════════════════════════════════════════════════════════
+// CANVAS / RENDERER
+// ════════════════════════════════════════════════════════════
+
+const canvas = document.getElementById('mainCanvas');
+const ctx    = canvas.getContext('2d');
+
+let viewX = 0, viewY = 0, viewScale = 1;
+let isDragging = false, dragStart = null;
+let selRect = null;
+let currentTool = 'pan';
+let nearestMove = null; // for tooltip
+
+function resizeCanvas() {
+  const wrap = document.getElementById('canvasWrap');
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  render();
+}
+
+// World → screen
+function w2s(wx, wy) {
+  return {
+    sx: (wx - viewX) * viewScale + canvas.width  / 2,
+    sy: canvas.height / 2 - (wy - viewY) * viewScale,
+  };
+}
+// Screen → world
+function s2w(sx, sy) {
+  return {
+    wx: (sx - canvas.width  / 2) / viewScale + viewX,
+    wy: -(sy - canvas.height / 2) / viewScale + viewY,
+  };
+}
+
+// Feed rate → colour gradient  (blue=slow, cyan, green, yellow, red=fast)
+function feedColor(f, minF, maxF, selected, modified) {
+  if (selected) return '#ffd166';
+  if (modified) return '#4fca82';
+
+  if (minF === maxF) return '#60b3ff';
+
+  const t = Math.max(0, Math.min(1, (f - minF) / (maxF - minF)));
+  // 0=blue, 0.33=cyan, 0.66=green, 1=red
+  let r, g, b;
+  if (t < 0.33) {
+    const u = t / 0.33;
+    r = Math.round(0   + u * 0);
+    g = Math.round(120 + u * 135);
+    b = Math.round(255 + u * (-55));
+  } else if (t < 0.66) {
+    const u = (t - 0.33) / 0.33;
+    r = Math.round(0   + u * 220);
+    g = Math.round(255 - u * 55);
+    b = Math.round(200 - u * 200);
+  } else {
+    const u = (t - 0.66) / 0.34;
+    r = 220;
+    g = Math.round(200 - u * 200);
+    b = 0;
+  }
+  return `rgb(${r},${g},${b})`;
+}
+
+// Sample an arc as a polyline in world coordinates (Y-up, same as CNC).
+// clockwise = G2; !clockwise = G3.
+function sampleArc(x0, y0, x1, y1, cx, cy, clockwise) {
+  const r = Math.sqrt((x0 - cx) ** 2 + (y0 - cy) ** 2);
+  if (r < 1e-9) return [[x0, y0], [x1, y1]];
+
+  const aStart = Math.atan2(y0 - cy, x0 - cx);
+  const aEnd   = Math.atan2(y1 - cy, x1 - cx);
+
+  let sweep;
+  if (clockwise) {
+    sweep = aStart - aEnd;
+    if (sweep <= 0) sweep += 2 * Math.PI;
+  } else {
+    sweep = aEnd - aStart;
+    if (sweep <= 0) sweep += 2 * Math.PI;
+  }
+
+  const steps = Math.max(4, Math.ceil(sweep / (Math.PI / 36))); // ~5° per step
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const a = clockwise ? aStart - t * sweep : aStart + t * sweep;
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+  }
+  return pts;
+}
+
+function getFeedRange() {
+  const rates = moves.filter(m => !m.isRapid && m.feedRate > 0).map(m => m.feedRate);
+  if (rates.length === 0) return { minF: 0, maxF: 0 };
+  return { minF: Math.min(...rates), maxF: Math.max(...rates) };
+}
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (moves.length === 0) {
+    ctx.fillStyle = '#2a2f3d';
+    ctx.font = '14px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('Load a G-code file to see the tool path', canvas.width/2, canvas.height/2);
+    return;
+  }
+
+  drawGrid();
+
+  const { minF, maxF } = getFeedRange();
+
+  // Draw moves
+  for (const move of moves) {
+    if (move.isRapid && !showRapids) continue;
+
+    const { sx: x0s, sy: y0s } = w2s(move.x0, move.y0);
+    const { sx: x1s, sy: y1s } = w2s(move.x,  move.y);
+
+    ctx.beginPath();
+
+    if ((move.type === 'arc_cw' || move.type === 'arc_ccw') && move.arcCx !== null) {
+      // Sample the arc in world space to avoid canvas Y-flip angle confusion.
+      const pts = sampleArc(move.x0, move.y0, move.x, move.y,
+                            move.arcCx, move.arcCy, move.type === 'arc_cw');
+      const p0 = w2s(pts[0][0], pts[0][1]);
+      ctx.moveTo(p0.sx, p0.sy);
+      for (let k = 1; k < pts.length; k++) {
+        const p = w2s(pts[k][0], pts[k][1]);
+        ctx.lineTo(p.sx, p.sy);
+      }
+    } else {
+      ctx.moveTo(x0s, y0s);
+      ctx.lineTo(x1s, y1s);
+    }
+
+    if (move.isRapid) {
+      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = 'rgba(120,130,155,0.35)';
+      ctx.lineWidth = 1;
+    } else {
+      ctx.setLineDash([]);
+      ctx.strokeStyle = feedColor(move.feedRate, minF, maxF, move.selected, move.modified);
+      ctx.lineWidth = move.selected ? 3 : 1.5;
+    }
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Selection rectangle
+  if (selRect && currentTool === 'select') {
+    ctx.strokeStyle = 'rgba(255,209,102,0.85)';
+    ctx.fillStyle   = 'rgba(255,209,102,0.08)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.rect(selRect.x, selRect.y, selRect.w, selRect.h);
+    ctx.stroke();
+    ctx.fill();
+    ctx.setLineDash([]);
+  }
+
+  // Origin marker
+  const { sx: ox, sy: oy } = w2s(0, 0);
+  if (ox > -10 && ox < canvas.width+10 && oy > -10 && oy < canvas.height+10) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(ox - 8, oy); ctx.lineTo(ox + 8, oy);
+    ctx.moveTo(ox, oy - 8); ctx.lineTo(ox, oy + 8);
+    ctx.stroke();
+  }
+}
+
+function drawGrid() {
+  const tl = s2w(0, 0);
+  const br = s2w(canvas.width, canvas.height);
+
+  // Pick a grid spacing that gives ~30-80px between lines
+  const rawSpacing = (br.wx - tl.wx) / (canvas.width / 50);
+  const mag = Math.pow(10, Math.floor(Math.log10(rawSpacing)));
+  const candidates = [mag, mag*2, mag*5, mag*10];
+  const spacing = candidates.find(c => c * viewScale >= 30) || candidates[candidates.length-1];
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+
+  for (let x = Math.ceil(tl.wx/spacing)*spacing; x <= br.wx; x += spacing) {
+    const { sx } = w2s(x, 0);
+    ctx.moveTo(sx, 0); ctx.lineTo(sx, canvas.height);
+  }
+  for (let y = Math.ceil(br.wy/spacing)*spacing; y <= tl.wy; y += spacing) {
+    const { sy } = w2s(0, y);
+    ctx.moveTo(0, sy); ctx.lineTo(canvas.width, sy);
+  }
+  ctx.stroke();
+
+  // Axes
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.beginPath();
+  const { sx: ax } = w2s(0, 0);
+  const { sy: ay } = w2s(0, 0);
+  ctx.moveTo(ax, 0); ctx.lineTo(ax, canvas.height);
+  ctx.moveTo(0, ay); ctx.lineTo(canvas.width, ay);
+  ctx.stroke();
+}
+
+function fitToView() {
+  if (moves.length === 0) return;
+
+  let minX=Infinity, maxX=-Infinity, minY=Infinity, maxY=-Infinity;
+  for (const m of moves) {
+    minX = Math.min(minX, m.x0, m.x);
+    maxX = Math.max(maxX, m.x0, m.x);
+    minY = Math.min(minY, m.y0, m.y);
+    maxY = Math.max(maxY, m.y0, m.y);
+  }
+
+  const pad = 0.1;
+  const pw = maxX - minX || 10;
+  const ph = maxY - minY || 10;
+  const sx = canvas.width  * (1 - 2*pad) / pw;
+  const sy = canvas.height * (1 - 2*pad) / ph;
+  viewScale = Math.min(sx, sy);
+  viewX = (minX + maxX) / 2;
+  viewY = (minY + maxY) / 2;
+
+  updateZoomDisplay();
+  render();
+}
+
+function updateZoomDisplay() {
+  document.getElementById('fZoom').textContent = viewScale.toFixed(2) + 'x';
+}
+
+function toggleRapids() {
+  showRapids = !showRapids;
+  document.getElementById('rapidToggleBtn').textContent = showRapids ? 'Rapids ✓' : 'Rapids ✗';
+  render();
+}
+
+// ════════════════════════════════════════════════════════════
+// INTERACTION
+// ════════════════════════════════════════════════════════════
+
+canvas.addEventListener('mousedown', onDown);
+canvas.addEventListener('mousemove', onMove);
+canvas.addEventListener('mouseup',   onUp);
+canvas.addEventListener('mouseleave', onLeave);
+canvas.addEventListener('wheel', onWheel, { passive: false });
+
+function canvasXY(e) {
+  const r = canvas.getBoundingClientRect();
+  return { mx: e.clientX - r.left, my: e.clientY - r.top };
+}
+
+function onDown(e) {
+  const { mx, my } = canvasXY(e);
+  isDragging = true;
+  dragStart = { mx, my, viewX, viewY };
+  if (currentTool === 'select') {
+    selRect = { x: mx, y: my, w: 0, h: 0, startX: mx, startY: my, additive: e.shiftKey };
+  }
+  canvas.style.cursor = currentTool === 'pan' ? 'grabbing' : 'crosshair';
+}
+
+function onMove(e) {
+  const { mx, my } = canvasXY(e);
+  const { wx, wy } = s2w(mx, my);
+  document.getElementById('fX').textContent = wx.toFixed(3);
+  document.getElementById('fY').textContent = wy.toFixed(3);
+
+  if (!isDragging) {
+    updateTooltip(mx, my, wx, wy);
+    return;
+  }
+
+  if (currentTool === 'pan') {
+    viewX = dragStart.viewX - (mx - dragStart.mx) / viewScale;
+    viewY = dragStart.viewY + (my - dragStart.my) / viewScale;
+    render();
+  } else if (currentTool === 'select' && selRect) {
+    const sx = Math.min(mx, selRect.startX);
+    const sy = Math.min(my, selRect.startY);
+    const sw = Math.abs(mx - selRect.startX);
+    const sh = Math.abs(my - selRect.startY);
+    selRect = { ...selRect, x: sx, y: sy, w: sw, h: sh };
+    render();
+  }
+}
+
+function onUp(e) {
+  if (!isDragging) return;
+  isDragging = false;
+  canvas.style.cursor = currentTool === 'pan' ? 'grab' : 'crosshair';
+
+  if (currentTool === 'select' && selRect) {
+    if (selRect.w > 4 && selRect.h > 4) {
+      commitRectSelection(selRect);
+    }
+    selRect = null;
+    render();
+  }
+}
+
+function onLeave() {
+  document.getElementById('tooltip').style.display = 'none';
+}
+
+function onWheel(e) {
+  e.preventDefault();
+  const { mx, my } = canvasXY(e);
+  const before = s2w(mx, my);
+  const factor = e.deltaY < 0 ? 1.15 : 0.87;
+  viewScale = Math.max(0.005, Math.min(5000, viewScale * factor));
+  const after = s2w(mx, my);
+  viewX += before.wx - after.wx;
+  viewY += before.wy - after.wy;
+  updateZoomDisplay();
+  render();
+}
+
+function updateTooltip(mx, my, wx, wy) {
+  const tip = document.getElementById('tooltip');
+  if (moves.length === 0) { tip.style.display = 'none'; return; }
+
+  // Find nearest move endpoint within ~12px
+  const thresh = 12 / viewScale;
+  let best = null, bestDist = thresh;
+  for (const m of moves) {
+    const d = Math.hypot(m.x - wx, m.y - wy);
+    if (d < bestDist) { bestDist = d; best = m; }
+  }
+
+  if (best) {
+    tip.style.display = 'block';
+    tip.style.left = (mx + 14) + 'px';
+    tip.style.top  = (my - 8)  + 'px';
+    const fText = best.isRapid ? 'Rapid' : `F${best.feedRate}`;
+    const modText = best.modified ? ' (modified)' : '';
+    tip.textContent = `Line ${best.lineIndex + 1}  •  ${fText}${modText}  •  X${best.x.toFixed(3)} Y${best.y.toFixed(3)}`;
+  } else {
+    tip.style.display = 'none';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// SELECTION
+// ════════════════════════════════════════════════════════════
+
+function commitRectSelection(rect) {
+  const tl = s2w(rect.x, rect.y);
+  const br = s2w(rect.x + rect.w, rect.y + rect.h);
+  const minX = Math.min(tl.wx, br.wx), maxX = Math.max(tl.wx, br.wx);
+  const minY = Math.min(tl.wy, br.wy), maxY = Math.max(tl.wy, br.wy);
+
+  if (!rect.additive) {
+    for (const m of moves) m.selected = false;
+  }
+
+  let count = 0;
+  for (const move of moves) {
+    if (move.isRapid) continue;
+    // Select if any part of the segment intersects the rect
+    if (segmentIntersectsRect(move.x0, move.y0, move.x, move.y, minX, minY, maxX, maxY)) {
+      move.selected = true;
+      count++;
+    }
+  }
+
+  updateSelectionPanel();
+}
+
+// Cohen-Sutherland-style segment/rect intersection
+function segmentIntersectsRect(x0, y0, x1, y1, rxMin, ryMin, rxMax, ryMax) {
+  // Check if either endpoint is inside
+  if (x0 >= rxMin && x0 <= rxMax && y0 >= ryMin && y0 <= ryMax) return true;
+  if (x1 >= rxMin && x1 <= rxMax && y1 >= ryMin && y1 <= ryMax) return true;
+
+  // Check if segment intersects any rect edge
+  const edges = [
+    [rxMin, ryMin, rxMax, ryMin],
+    [rxMax, ryMin, rxMax, ryMax],
+    [rxMax, ryMax, rxMin, ryMax],
+    [rxMin, ryMax, rxMin, ryMin],
+  ];
+  for (const [ex0, ey0, ex1, ey1] of edges) {
+    if (segmentsIntersect(x0, y0, x1, y1, ex0, ey0, ex1, ey1)) return true;
+  }
+  return false;
+}
+
+function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const d1x = bx-ax, d1y = by-ay;
+  const d2x = dx-cx, d2y = dy-cy;
+  const cross = d1x*d2y - d1y*d2x;
+  if (Math.abs(cross) < 1e-10) return false;
+  const t = ((cx-ax)*d2y - (cy-ay)*d2x) / cross;
+  const u = ((cx-ax)*d1y - (cy-ay)*d1x) / cross;
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
+
+function updateSelectionPanel() {
+  const sel = moves.filter(m => m.selected);
+  const panel = document.getElementById('selPanel');
+
+  if (sel.length === 0) {
+    panel.style.display = 'none';
+    render();
+    return;
+  }
+
+  panel.style.display = '';
+  document.getElementById('selCount').textContent = sel.length;
+
+  const rates = sel.filter(m => m.feedRate > 0).map(m => m.feedRate);
+  if (rates.length > 0) {
+    const minF = Math.min(...rates), maxF = Math.max(...rates);
+    document.getElementById('selFeedRange').textContent =
+      minF === maxF ? minF : `${minF} – ${maxF}`;
+  } else {
+    document.getElementById('selFeedRange').textContent = '—';
+  }
+
+  render();
+}
+
+function clearSelection() {
+  for (const m of moves) m.selected = false;
+  document.getElementById('selPanel').style.display = 'none';
+  render();
+}
+
+// ════════════════════════════════════════════════════════════
+// FEED RATE MODIFICATION
+// ════════════════════════════════════════════════════════════
+
+function applyFeedRate() {
+  const val = parseFloat(document.getElementById('newFeedRate').value);
+  if (!val || val <= 0) {
+    alert('Please enter a valid feed rate greater than 0.');
+    return;
+  }
+
+  const sel = moves.filter(m => m.selected && !m.isRapid);
+  if (sel.length === 0) return;
+
+  const oldRates = [...new Set(sel.map(m => m.feedRate))].sort((a,b)=>a-b);
+
+  for (const m of sel) {
+    m.feedRate = val;
+    m.modified = true;
+    m.selected = false;
+  }
+
+  changes.push({ count: sel.length, oldRates, newRate: val, ts: Date.now() });
+
+  rebuildModifiedGCode();
+  updateChangesPanel();
+  updateSelectionPanel(); // clears selection UI
+  updateStats();
+  updateLegend();
+  document.getElementById('exportBtn').disabled = false;
+  render();
+}
+
+// Rebuild modifiedLines from scratch based on current move feed rates
+function rebuildModifiedGCode() {
+  modifiedLines = [...originalLines];
+
+  // Walk all non-rapid moves in order.  Track what F value the output file has
+  // at each point; insert / replace F only where it changes.
+  let lastOutputF = null;
+
+  for (const move of moves) {
+    if (move.isRapid) continue;
+
+    const desiredF = move.feedRate;
+    if (desiredF === lastOutputF) continue; // no change needed
+
+    const li = move.lineIndex;
+    const orig = modifiedLines[li];
+
+    if (/\bF[\d.]+/i.test(orig)) {
+      modifiedLines[li] = orig.replace(/\bF[\d.]+/i, `F${desiredF}`);
+    } else {
+      // Append F value (before any trailing comment/newline)
+      modifiedLines[li] = orig.trimEnd() + ` F${desiredF}`;
+    }
+
+    lastOutputF = desiredF;
+  }
+}
+
+function updateChangesPanel() {
+  const panel = document.getElementById('changesPanel');
+  const list  = document.getElementById('changesList');
+
+  if (changes.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = '';
+  list.innerHTML = changes.map(c =>
+    `<div class="change-item">
+      ${c.count} move${c.count>1?'s':''}&nbsp;
+      <span style="color:#888">${c.oldRates.join(', ')}</span>
+      <span class="arrow">→</span>
+      <span class="new-val">F${c.newRate}</span>
+    </div>`
+  ).join('');
+}
+
+function resetAllChanges() {
+  if (!confirm('Reset all feed rate changes?')) return;
+  // Restore original feed rates
+  moves = parseGCode(originalLines.join('\n'));
+  changes = [];
+  modifiedLines = [...originalLines];
+  updateChangesPanel();
+  updateSelectionPanel();
+  updateStats();
+  updateLegend();
+  document.getElementById('exportBtn').disabled = true;
+  render();
+}
+
+// ════════════════════════════════════════════════════════════
+// EXPORT
+// ════════════════════════════════════════════════════════════
+
+function exportGCode() {
+  const output = modifiedLines.join('\n');
+  const blob = new Blob([output], { type: 'text/plain' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'modified.nc';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ════════════════════════════════════════════════════════════
+// LOADING
+// ════════════════════════════════════════════════════════════
+
+function loadGCode(text, filename) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  originalLines = text.split('\n');
+  modifiedLines = [...originalLines];
+  changes = [];
+  moves = parseGCode(text);
+
+  if (moves.length === 0) {
+    setStatus('No moves found — check that this is valid G-code');
+    return;
+  }
+
+  // Detect path gaps and log first offenders to help diagnose parser issues
+  const EPS = 1e-4;
+  const gaps = [];
+  for (let i = 1; i < moves.length; i++) {
+    const prev = moves[i - 1], cur = moves[i];
+    const dx = Math.abs(cur.x0 - prev.x), dy = Math.abs(cur.y0 - prev.y);
+    if (dx > EPS || dy > EPS) {
+      gaps.push({ i, prev, cur, dx, dy });
+    }
+  }
+  if (gaps.length) {
+    console.warn(`[GCode] ${gaps.length} path gap(s) detected:`);
+    gaps.slice(0, 10).forEach(g => {
+      console.warn(
+        `  Gap before move #${g.i} (line ${g.cur.lineIndex + 1}):`,
+        `prev end (${g.prev.x.toFixed(4)}, ${g.prev.y.toFixed(4)})`,
+        `→ cur start (${g.cur.x0.toFixed(4)}, ${g.cur.y0.toFixed(4)})`,
+        `type=${g.cur.type}`,
+        `raw line: "${originalLines[g.cur.lineIndex]?.trim()}"`
+      );
+    });
+  }
+  console.log('[GCode] First 15 moves:', moves.slice(0, 15).map(m =>
+    `#${m.lineIndex + 1} ${m.type} (${m.x0.toFixed(3)},${m.y0.toFixed(3)})→(${m.x.toFixed(3)},${m.y.toFixed(3)})`
+  ));
+
+  // Reset view & state
+  fitToView();
+  updateStats();
+  updateLegend();
+  clearSelection();
+  updateChangesPanel();
+
+  document.getElementById('statsPanel').style.display = '';
+  document.getElementById('exportBtn').disabled = false;
+  const gapNote = gaps.length ? ` (⚠ ${gaps.length} gap${gaps.length > 1 ? 's' : ''} — see console)` : '';
+  setStatus(`Loaded ${moves.length} moves${filename ? ' from ' + filename : ''}${gapNote}`);
+  document.getElementById('headerHint').textContent = filename || 'G-code loaded';
+}
+
+function loadFromTextarea() {
+  loadGCode(document.getElementById('gcodeInput').value);
+}
+
+function setStatus(msg) {
+  document.getElementById('fMsg').textContent = msg;
+}
+
+function updateStats() {
+  const feed  = moves.filter(m => !m.isRapid);
+  const rapid = moves.filter(m => m.isRapid);
+  const rates = new Set(feed.map(m => m.feedRate));
+  document.getElementById('statTotal').textContent = moves.length;
+  document.getElementById('statFeed').textContent  = feed.length;
+  document.getElementById('statRapid').textContent = rapid.length;
+  document.getElementById('statRates').textContent = rates.size;
+}
+
+function updateLegend() {
+  const { minF, maxF } = getFeedRange();
+  if (minF === maxF) {
+    document.getElementById('legendWrap').style.display = 'none';
+    return;
+  }
+  document.getElementById('legendWrap').style.display = '';
+
+  const lc = document.getElementById('legendCanvas');
+  lc.width = lc.parentElement.clientWidth - 2;
+  const lctx = lc.getContext('2d');
+  const grad = lctx.createLinearGradient(0, 0, lc.width, 0);
+  for (let t = 0; t <= 1; t += 0.05) {
+    grad.addColorStop(t, feedColor(minF + t*(maxF-minF), minF, maxF, false, false));
+  }
+  lctx.fillStyle = grad;
+  lctx.fillRect(0, 0, lc.width, 10);
+
+  document.getElementById('legendMin').textContent = minF;
+  document.getElementById('legendMax').textContent = maxF;
+}
+
+// ════════════════════════════════════════════════════════════
+// TOOL SWITCHING
+// ════════════════════════════════════════════════════════════
+
+function setTool(tool) {
+  currentTool = tool;
+  canvas.style.cursor = tool === 'pan' ? 'grab' : 'crosshair';
+  document.getElementById('toolPan').classList.toggle('active', tool === 'pan');
+  document.getElementById('toolSelect').classList.toggle('active', tool === 'select');
+  document.getElementById('toolHint').textContent =
+    tool === 'pan'
+      ? 'Drag to pan the view. Scroll to zoom.'
+      : 'Drag a rectangle over the path region to select moves.';
+}
+
+// ════════════════════════════════════════════════════════════
+// DRAG & DROP + FILE INPUT
+// ════════════════════════════════════════════════════════════
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+fileInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById('gcodeInput').value = ev.target.result;
+    loadGCode(ev.target.result, file.name);
+  };
+  reader.readAsText(file);
+  fileInput.value = '';
+});
+
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    document.getElementById('gcodeInput').value = ev.target.result;
+    loadGCode(ev.target.result, file.name);
+  };
+  reader.readAsText(file);
+});
+dropZone.addEventListener('dragover',  () => dropZone.classList.add('drag-over'));
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',      () => dropZone.classList.remove('drag-over'));
+
+// ════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+setTool('pan');
+</script>
+</body>
+</html>
