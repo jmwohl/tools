@@ -9,6 +9,7 @@ Live at: **https://jonathanwohl.github.io/tools/**
 | Tool | Description |
 |------|-------------|
 | [G-Code Feed Rate Modifier](gcode-feed-rate/) | Visualize a G-code tool path and selectively adjust feed rates by region |
+| [G-Code Coordinate Clamp](gcode-coordinate-clamp/) | Clamp X, Y, and Z coordinates to configured minimum and maximum values while preserving G-code structure |
 
 ## Adding a new tool
 

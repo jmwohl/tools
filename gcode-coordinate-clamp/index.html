@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>G-Code Coordinate Clamp</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #111318;
+      color: #d4d8e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      background: #1a1e28;
+      border-bottom: 1px solid #2a2f3d;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #e8eaf0;
+      letter-spacing: 0.3px;
+      margin-right: 4px;
+    }
+
+    .header-sep { flex: 1; }
+    .header-hint {
+      font-size: 11px;
+      color: #555c70;
+    }
+
+    .btn {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: opacity 0.15s, background 0.15s;
+      white-space: nowrap;
+    }
+    .btn:disabled { opacity: 0.35; cursor: default; }
+    .btn:not(:disabled):hover { opacity: 0.85; }
+    .btn-primary { background: #4f7ef8; color: #fff; }
+    .btn-secondary { background: #252b3b; color: #c8ccd8; border: 1px solid #333a4d; }
+    .btn-danger { background: #c84444; color: #fff; }
+
+    .workspace {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: 320px;
+      flex-shrink: 0;
+      background: #1a1e28;
+      border-right: 1px solid #2a2f3d;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    .sidebar::-webkit-scrollbar { width: 5px; }
+    .sidebar::-webkit-scrollbar-track { background: transparent; }
+    .sidebar::-webkit-scrollbar-thumb { background: #2a2f3d; border-radius: 3px; }
+
+    .panel {
+      padding: 14px 16px;
+      border-bottom: 1px solid #2a2f3d;
+    }
+
+    .panel-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #555c70;
+      margin-bottom: 10px;
+    }
+
+    .drop-zone {
+      border: 1.5px dashed #333a4d;
+      border-radius: 6px;
+      padding: 20px 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      margin-bottom: 10px;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: #4f7ef8;
+      background: rgba(79,126,248,0.05);
+    }
+    .drop-zone-icon { font-size: 22px; margin-bottom: 6px; }
+    .drop-zone-label { font-size: 12px; color: #888; }
+    .drop-zone-label span { color: #4f7ef8; }
+    input[type="file"] { display: none; }
+
+    .divider-or {
+      text-align: center;
+      font-size: 11px;
+      color: #444;
+      margin: 8px 0;
+      position: relative;
+    }
+    .divider-or::before, .divider-or::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 38%;
+      height: 1px;
+      background: #2a2f3d;
+    }
+    .divider-or::before { left: 0; }
+    .divider-or::after { right: 0; }
+
+    textarea {
+      width: 100%;
+      background: #111318;
+      color: #88cc88;
+      border: 1px solid #2a2f3d;
+      border-radius: 5px;
+      padding: 8px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 10.5px;
+      resize: vertical;
+      min-height: 90px;
+      line-height: 1.5;
+    }
+    textarea:focus { outline: none; border-color: #4f7ef8; }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .field { margin-bottom: 10px; }
+    .field:last-child { margin-bottom: 0; }
+    .field-label {
+      font-size: 11px;
+      color: #666c80;
+      margin-bottom: 4px;
+      display: block;
+    }
+
+    input[type="number"] {
+      width: 100%;
+      background: #111318;
+      color: #d4d8e0;
+      border: 1px solid #2a2f3d;
+      border-radius: 5px;
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+    input[type="number"]:focus {
+      outline: none;
+      border-color: #4f7ef8;
+    }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+
+    .info-chip {
+      background: #111318;
+      border: 1px solid #2a2f3d;
+      border-radius: 5px;
+      padding: 7px 10px;
+    }
+    .info-chip-label { font-size: 10px; color: #555c70; margin-bottom: 2px; }
+    .info-chip-val { font-size: 13px; font-weight: 600; color: #e8eaf0; }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #0e1018;
+    }
+
+    .preview-header {
+      background: #1a1e28;
+      border-bottom: 1px solid #2a2f3d;
+      padding: 10px 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .preview-header .label {
+      font-size: 12px;
+      color: #666c80;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+    }
+
+    .preview-wrap {
+      flex: 1;
+      padding: 12px;
+      overflow: hidden;
+    }
+
+    textarea.output {
+      width: 100%;
+      height: 100%;
+      min-height: 100%;
+      background: #0e1018;
+      color: #d4d8e0;
+      border: 1px solid #2a2f3d;
+      border-radius: 6px;
+      padding: 14px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      line-height: 1.55;
+      resize: none;
+    }
+
+    footer {
+      background: #1a1e28;
+      border-top: 1px solid #2a2f3d;
+      padding: 4px 14px;
+      display: flex;
+      gap: 20px;
+      font-size: 11px;
+      color: #555c70;
+      flex-shrink: 0;
+    }
+
+    footer span b { color: #888; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>G-Code Coordinate Clamp</h1>
+  <label for="fileInput" class="btn btn-secondary">Open File</label>
+  <input type="file" id="fileInput" accept=".nc,.gcode,.tap,.cnc,.ngc,.txt">
+  <div class="header-sep"></div>
+  <span class="header-hint" id="headerHint">Load a G-code file to begin</span>
+  <button class="btn btn-primary" id="downloadBtn" disabled onclick="downloadModifiedGCode()">Download Modified</button>
+</header>
+
+<div class="workspace">
+  <aside class="sidebar">
+    <div class="panel">
+      <div class="panel-title">Import</div>
+      <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+        <div class="drop-zone-icon">📂</div>
+        <div class="drop-zone-label">Drop file here or <span>browse</span></div>
+        <div class="drop-zone-label" style="margin-top:3px;font-size:10px">.nc .gcode .tap .cnc</div>
+      </div>
+      <div class="divider-or">or paste below</div>
+      <textarea id="gcodeInput" placeholder="Paste G-code here…" rows="8" spellcheck="false"></textarea>
+      <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="loadFromTextarea()">Load G-Code</button>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Clamp Limits</div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label class="field-label">X min</label>
+          <input type="number" id="xMin" step="0.001" placeholder="-∞">
+        </div>
+        <div class="field">
+          <label class="field-label">X max</label>
+          <input type="number" id="xMax" step="0.001" placeholder="∞">
+        </div>
+        <div class="field">
+          <label class="field-label">Y min</label>
+          <input type="number" id="yMin" step="0.001" placeholder="-∞">
+        </div>
+        <div class="field">
+          <label class="field-label">Y max</label>
+          <input type="number" id="yMax" step="0.001" placeholder="∞">
+        </div>
+        <div class="field">
+          <label class="field-label">Z min</label>
+          <input type="number" id="zMin" step="0.001" placeholder="-∞">
+        </div>
+        <div class="field">
+          <label class="field-label">Z max</label>
+          <input type="number" id="zMax" step="0.001" placeholder="∞">
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="btn btn-primary" style="flex:1" onclick="applyLimits()">Apply Clamp</button>
+        <button class="btn btn-secondary" onclick="resetLimits()">Reset</button>
+      </div>
+    </div>
+
+    <div class="panel" id="statsPanel" style="display:none">
+      <div class="panel-title">File Stats</div>
+      <div class="info-grid">
+        <div class="info-chip">
+          <div class="info-chip-label">Lines</div>
+          <div class="info-chip-val" id="statLines">—</div>
+        </div>
+        <div class="info-chip">
+          <div class="info-chip-label">Clamped</div>
+          <div class="info-chip-val" id="statClamped">0</div>
+        </div>
+      </div>
+      <div class="info-grid">
+        <div class="info-chip">
+          <div class="info-chip-label">Last X</div>
+          <div class="info-chip-val" id="statX">—</div>
+        </div>
+        <div class="info-chip">
+          <div class="info-chip-label">Last Y</div>
+          <div class="info-chip-val" id="statY">—</div>
+        </div>
+        <div class="info-chip">
+          <div class="info-chip-label">Last Z</div>
+          <div class="info-chip-val" id="statZ">—</div>
+        </div>
+        <div class="info-chip">
+          <div class="info-chip-label">Mode</div>
+          <div class="info-chip-val" id="statMode">—</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="preview-header">
+      <div class="label">Modified G-code preview</div>
+      <button class="btn btn-secondary" onclick="revertToOriginal()">Revert</button>
+    </div>
+    <div class="preview-wrap">
+      <textarea id="outputPreview" class="output" readonly spellcheck="false"></textarea>
+    </div>
+  </main>
+</div>
+
+<footer>
+  <span><b>File:</b> <span id="fFile">No file loaded</span></span>
+  <span><b>Limits:</b> <span id="fLimits">—</span></span>
+  <span id="fMsg">Load a G-code file to begin</span>
+</footer>
+
+<script>
+let originalText = '';
+let currentText = '';
+let lastFileName = '';
+let currentPos = { x: 0, y: 0, z: 0 };
+let absoluteMode = true;
+
+function setStatus(msg) {
+  document.getElementById('fMsg').textContent = msg;
+}
+
+function toSafeNumber(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.abs(n) < 1e-12 ? 0 : n;
+}
+
+function formatNumber(value) {
+  const safe = toSafeNumber(value);
+  if (safe === null) return '0';
+  const fixed = Math.abs(safe) < 1e-9 ? 0 : Number(safe.toFixed(6));
+  const text = String(fixed);
+  return text === '-0' ? '0' : text;
+}
+
+function readLimits() {
+  return {
+    x: {
+      min: toSafeNumber(document.getElementById('xMin').value),
+      max: toSafeNumber(document.getElementById('xMax').value)
+    },
+    y: {
+      min: toSafeNumber(document.getElementById('yMin').value),
+      max: toSafeNumber(document.getElementById('yMax').value)
+    },
+    z: {
+      min: toSafeNumber(document.getElementById('zMin').value),
+      max: toSafeNumber(document.getElementById('zMax').value)
+    }
+  };
+}
+
+function clampToLimit(axis, value, limits) {
+  const axisLimits = limits[axis.toLowerCase()];
+  if (axisLimits.min !== null && value < axisLimits.min) return axisLimits.min;
+  if (axisLimits.max !== null && value > axisLimits.max) return axisLimits.max;
+  return value;
+}
+
+function summarizeLimits(limits) {
+  const parts = ['X', 'Y', 'Z'].map(axis => {
+    const lower = limits[axis.toLowerCase()].min ?? '-∞';
+    const upper = limits[axis.toLowerCase()].max ?? '∞';
+    return `${axis}:${lower}..${upper}`;
+  });
+  return parts.join(' | ');
+}
+
+function updateLimitSummary() {
+  const limits = readLimits();
+  document.getElementById('fLimits').textContent = summarizeLimits(limits);
+}
+
+function resetLimits() {
+  ['xMin', 'xMax', 'yMin', 'yMax', 'zMin', 'zMax'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  updateLimitSummary();
+  if (originalText.trim()) {
+    applyLimits();
+  }
+}
+
+function clampGCode(text, limits) {
+  const lines = text.split('\n');
+  let absMode = true;
+  const pos = { x: 0, y: 0, z: 0 };
+  let clampedCount = 0;
+
+  const out = lines.map((line) => {
+    const clean = line
+      .replace(/\(.*?\)/g, '')
+      .replace(/;.*$/, '')
+      .trim()
+      .toUpperCase();
+
+    if (!clean) return line;
+
+    const gNums = new Set([...clean.matchAll(/G(\d+)/g)].map(m => parseInt(m[1], 10)));
+    if (gNums.has(90)) absMode = true;
+    if (gNums.has(91)) absMode = false;
+
+    const hasSetPosition = gNums.has(92);
+
+    const axisPattern = /([XYZ])([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/g;
+    const replaced = line.replace(axisPattern, (match, axis, rawText) => {
+      const rawValue = parseFloat(rawText);
+      const currentValue = pos[axis.toLowerCase()];
+
+      let targetValue;
+      if (hasSetPosition) {
+        targetValue = rawValue;
+      } else if (absMode) {
+        targetValue = rawValue;
+      } else {
+        targetValue = currentValue + rawValue;
+      }
+
+      const clampedTarget = clampToLimit(axis, targetValue, limits);
+      const nextValue = hasSetPosition || absMode ? clampedTarget : clampedTarget - currentValue;
+
+      if (clampedTarget !== targetValue) {
+        clampedCount++;
+      }
+
+      pos[axis.toLowerCase()] = clampedTarget;
+      return `${axis}${formatNumber(nextValue)}`;
+    });
+
+    return replaced;
+  });
+
+  return { output: out.join('\n'), clampedCount };
+}
+
+function loadGCode(text, filename) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    setStatus('No G-code content found.');
+    return;
+  }
+
+  originalText = text;
+  currentText = text;
+  lastFileName = filename || 'untitled.gcode';
+
+  document.getElementById('gcodeInput').value = text;
+  document.getElementById('headerHint').textContent = filename || 'G-code loaded';
+  document.getElementById('fFile').textContent = lastFileName;
+
+  const limits = readLimits();
+  const result = clampGCode(text, limits);
+  currentText = result.output;
+  document.getElementById('outputPreview').value = currentText;
+
+  document.getElementById('downloadBtn').disabled = false;
+  document.getElementById('statsPanel').style.display = '';
+  document.getElementById('statLines').textContent = text.split('\n').length;
+  document.getElementById('statClamped').textContent = result.clampedCount;
+  document.getElementById('statX').textContent = '0.000';
+  document.getElementById('statY').textContent = '0.000';
+  document.getElementById('statZ').textContent = '0.000';
+  document.getElementById('statMode').textContent = 'ABS';
+  updateLimitSummary();
+  setStatus(`Loaded ${lastFileName} — ${result.clampedCount} coordinate clamp${result.clampedCount === 1 ? '' : 's'}`);
+}
+
+function loadFromTextarea() {
+  loadGCode(document.getElementById('gcodeInput').value, 'pasted-gcode.nc');
+}
+
+function applyLimits() {
+  if (!originalText.trim()) {
+    setStatus('Load a G-code file before applying limits.');
+    return;
+  }
+
+  const limits = readLimits();
+  const result = clampGCode(originalText, limits);
+  currentText = result.output;
+  document.getElementById('outputPreview').value = currentText;
+  document.getElementById('downloadBtn').disabled = false;
+  document.getElementById('statClamped').textContent = result.clampedCount;
+  setStatus(`${result.clampedCount} coordinate value${result.clampedCount === 1 ? '' : 's'} clamped to the current limits.`);
+  updateLimitSummary();
+}
+
+function revertToOriginal() {
+  if (!originalText) return;
+  currentText = originalText;
+  document.getElementById('outputPreview').value = currentText;
+  setStatus('Restored the original G-code.');
+}
+
+function downloadModifiedGCode() {
+  if (!currentText.trim()) return;
+  const blob = new Blob([currentText], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (lastFileName || 'modified.gcode').replace(/\.[^/.]+$/, '') + '-clamped.gcode';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+
+fileInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    loadGCode(ev.target.result, file.name);
+  };
+  reader.readAsText(file);
+  fileInput.value = '';
+});
+
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    loadGCode(ev.target.result, file.name);
+  };
+  reader.readAsText(file);
+});
+dropZone.addEventListener('dragover', () => dropZone.classList.add('drag-over'));
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', () => dropZone.classList.remove('drag-over'));
+
+updateLimitSummary();
+</script>
+</body>
+</html>
