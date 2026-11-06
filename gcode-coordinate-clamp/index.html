@@ -323,6 +323,24 @@
       </div>
       <div class="info-grid">
         <div class="info-chip">
+          <div class="info-chip-label">X range</div>
+          <div class="info-chip-val" id="statXRange">—</div>
+        </div>
+        <div class="info-chip">
+          <div class="info-chip-label">Y range</div>
+          <div class="info-chip-val" id="statYRange">—</div>
+        </div>
+        <div class="info-chip">
+          <div class="info-chip-label">Z range</div>
+          <div class="info-chip-val" id="statZRange">—</div>
+        </div>
+        <div class="info-chip">
+          <div class="info-chip-label">Mode</div>
+          <div class="info-chip-val" id="statMode">—</div>
+        </div>
+      </div>
+      <div class="info-grid">
+        <div class="info-chip">
           <div class="info-chip-label">Last X</div>
           <div class="info-chip-val" id="statX">—</div>
         </div>
@@ -335,8 +353,8 @@
           <div class="info-chip-val" id="statZ">—</div>
         </div>
         <div class="info-chip">
-          <div class="info-chip-label">Mode</div>
-          <div class="info-chip-val" id="statMode">—</div>
+          <div class="info-chip-label">Observed</div>
+          <div class="info-chip-val" id="statObserved">—</div>
         </div>
       </div>
     </div>
@@ -433,6 +451,76 @@ function resetLimits() {
   }
 }
 
+function inspectBounds(text) {
+  const bounds = {
+    x: { min: null, max: null },
+    y: { min: null, max: null },
+    z: { min: null, max: null }
+  };
+
+  let absMode = true;
+  const pos = { x: 0, y: 0, z: 0 };
+
+  for (const line of text.split('\n')) {
+    const clean = line
+      .replace(/\(.*?\)/g, '')
+      .replace(/;.*$/, '')
+      .trim()
+      .toUpperCase();
+
+    if (!clean) continue;
+
+    const gNums = new Set([...clean.matchAll(/G(\d+)/g)].map(m => parseInt(m[1], 10)));
+    if (gNums.has(90)) absMode = true;
+    if (gNums.has(91)) absMode = false;
+
+    const hasSetPosition = gNums.has(92);
+    const axisPattern = /([XYZ])([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)/g;
+    let match;
+    while ((match = axisPattern.exec(clean)) !== null) {
+      const axis = match[1];
+      const rawValue = parseFloat(match[2]);
+      const lower = axis.toLowerCase();
+      let targetValue;
+
+      if (hasSetPosition) {
+        targetValue = rawValue;
+      } else if (absMode) {
+        targetValue = rawValue;
+      } else {
+        targetValue = pos[lower] + rawValue;
+      }
+
+      pos[lower] = targetValue;
+
+      if (bounds[lower].min === null || targetValue < bounds[lower].min) {
+        bounds[lower].min = targetValue;
+      }
+      if (bounds[lower].max === null || targetValue > bounds[lower].max) {
+        bounds[lower].max = targetValue;
+      }
+    }
+  }
+
+  return bounds;
+}
+
+function updateBoundsDisplay(bounds) {
+  const axes = ['x', 'y', 'z'];
+  axes.forEach(axis => {
+    const { min, max } = bounds[axis];
+    const id = `stat${axis.toUpperCase()}Range`;
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = min === null || max === null ? '—' : `${formatNumber(min)} → ${formatNumber(max)}`;
+  });
+
+  const observed = Object.entries(bounds).every(([axis, values]) => values.min !== null && values.max !== null)
+    ? 'Yes'
+    : 'Partial';
+  document.getElementById('statObserved').textContent = observed;
+}
+
 function clampGCode(text, limits) {
   const lines = text.split('\n');
   let absMode = true;
@@ -502,6 +590,7 @@ function loadGCode(text, filename) {
 
   const limits = readLimits();
   const result = clampGCode(text, limits);
+  const bounds = inspectBounds(text);
   currentText = result.output;
   document.getElementById('outputPreview').value = currentText;
 
@@ -509,10 +598,11 @@ function loadGCode(text, filename) {
   document.getElementById('statsPanel').style.display = '';
   document.getElementById('statLines').textContent = text.split('\n').length;
   document.getElementById('statClamped').textContent = result.clampedCount;
-  document.getElementById('statX').textContent = '0.000';
-  document.getElementById('statY').textContent = '0.000';
-  document.getElementById('statZ').textContent = '0.000';
+  document.getElementById('statX').textContent = bounds.x.max === null ? '—' : formatNumber(bounds.x.max);
+  document.getElementById('statY').textContent = bounds.y.max === null ? '—' : formatNumber(bounds.y.max);
+  document.getElementById('statZ').textContent = bounds.z.max === null ? '—' : formatNumber(bounds.z.max);
   document.getElementById('statMode').textContent = 'ABS';
+  updateBoundsDisplay(bounds);
   updateLimitSummary();
   setStatus(`Loaded ${lastFileName} — ${result.clampedCount} coordinate clamp${result.clampedCount === 1 ? '' : 's'}`);
 }
