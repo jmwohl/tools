@@ -363,10 +363,14 @@
   <main class="main">
     <div class="preview-header">
       <div class="label">Modified G-code preview</div>
-      <button class="btn btn-secondary" onclick="revertToOriginal()">Revert</button>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-secondary" id="undoBtn" onclick="undoChange()" disabled>Undo</button>
+        <button class="btn btn-secondary" id="redoBtn" onclick="redoChange()" disabled>Redo</button>
+        <button class="btn btn-secondary" onclick="revertToOriginal()">Revert</button>
+      </div>
     </div>
     <div class="preview-wrap">
-      <textarea id="outputPreview" class="output" readonly spellcheck="false"></textarea>
+      <textarea id="outputPreview" class="output" spellcheck="false"></textarea>
     </div>
   </main>
 </div>
@@ -384,10 +388,62 @@ let lastFileName = '';
 let currentPos = { x: 0, y: 0, z: 0 };
 let absoluteMode = true;
 let activeLoadToken = 0;
+let history = [];
+let historyIndex = -1;
+let suppressHistory = false;
 
 function beginLoad() {
   activeLoadToken += 1;
   return activeLoadToken;
+}
+
+function updateHistoryButtons() {
+  document.getElementById('undoBtn').disabled = historyIndex <= 0;
+  document.getElementById('redoBtn').disabled = historyIndex >= history.length - 1;
+}
+
+function pushHistory(text) {
+  if (suppressHistory) return;
+  if (historyIndex >= 0 && history[historyIndex] === text) return;
+  history = history.slice(0, historyIndex + 1);
+  history.push(text);
+  if (history.length > 100) {
+    history.shift();
+  }
+  historyIndex = history.length - 1;
+  updateHistoryButtons();
+}
+
+function applyTextState(text, options = {}) {
+  const { skipHistory = false, statusMessage = null } = options;
+  suppressHistory = skipHistory;
+  currentText = text;
+  document.getElementById('outputPreview').value = text;
+  if (!skipHistory) {
+    pushHistory(text);
+  }
+  suppressHistory = false;
+  if (statusMessage) setStatus(statusMessage);
+}
+
+function undoChange() {
+  if (historyIndex <= 0) return;
+  historyIndex -= 1;
+  const value = history[historyIndex];
+  currentText = value;
+  document.getElementById('outputPreview').value = value;
+  updateHistoryButtons();
+  setStatus('Undid last change.');
+}
+
+function redoChange() {
+  if (historyIndex >= history.length - 1) return;
+  historyIndex += 1;
+  const value = history[historyIndex];
+  currentText = value;
+  document.getElementById('outputPreview').value = value;
+  updateHistoryButtons();
+  setStatus('Redid change.');
 }
 
 function setStatus(msg) {
@@ -600,7 +656,6 @@ function loadGCode(text, filename, token = activeLoadToken) {
   }
 
   originalText = text;
-  currentText = text;
   lastFileName = filename || 'untitled.gcode';
 
   document.getElementById('gcodeInput').value = text;
@@ -611,6 +666,10 @@ function loadGCode(text, filename, token = activeLoadToken) {
   const result = clampGCode(text, limits);
   currentText = result.output;
   document.getElementById('outputPreview').value = currentText;
+
+  history = [currentText];
+  historyIndex = 0;
+  updateHistoryButtons();
 
   document.getElementById('downloadBtn').disabled = false;
   document.getElementById('statsPanel').style.display = '';
@@ -625,15 +684,16 @@ function loadFromTextarea() {
 }
 
 function applyLimits() {
-  if (!originalText.trim()) {
+  if (!currentText.trim()) {
     setStatus('Load a G-code file before applying limits.');
     return;
   }
 
   const limits = readLimits();
-  const result = clampGCode(originalText, limits);
+  const result = clampGCode(currentText, limits);
   currentText = result.output;
   document.getElementById('outputPreview').value = currentText;
+  pushHistory(currentText);
   document.getElementById('downloadBtn').disabled = false;
   refreshStatsForText(currentText, result.clampedCount);
   setStatus(`${result.clampedCount} coordinate value${result.clampedCount === 1 ? '' : 's'} clamped to the current limits.`);
@@ -644,6 +704,7 @@ function revertToOriginal() {
   if (!originalText) return;
   currentText = originalText;
   document.getElementById('outputPreview').value = currentText;
+  pushHistory(currentText);
   refreshStatsForText(currentText, 0);
   setStatus('Restored the original G-code.');
 }
@@ -663,6 +724,15 @@ function downloadModifiedGCode() {
 
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
+const outputPreview = document.getElementById('outputPreview');
+
+outputPreview.addEventListener('input', () => {
+  const text = outputPreview.value;
+  currentText = text;
+  pushHistory(text);
+  refreshStatsForText(text, 0);
+  document.getElementById('downloadBtn').disabled = false;
+});
 
 fileInput.addEventListener('change', e => {
   const file = e.target.files[0];
@@ -709,6 +779,7 @@ dropZone.addEventListener('drop', e => {
   reader.readAsText(file);
 });
 
+updateHistoryButtons();
 updateLimitSummary();
 </script>
 </body>
