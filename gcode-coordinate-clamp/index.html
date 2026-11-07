@@ -383,6 +383,12 @@ let currentText = '';
 let lastFileName = '';
 let currentPos = { x: 0, y: 0, z: 0 };
 let absoluteMode = true;
+let activeLoadToken = 0;
+
+function beginLoad() {
+  activeLoadToken += 1;
+  return activeLoadToken;
+}
 
 function setStatus(msg) {
   document.getElementById('fMsg').textContent = msg;
@@ -521,6 +527,17 @@ function updateBoundsDisplay(bounds) {
   document.getElementById('statObserved').textContent = observed;
 }
 
+function refreshStatsForText(text, clampedCount) {
+  const bounds = inspectBounds(text);
+  document.getElementById('statLines').textContent = text.split('\n').length;
+  document.getElementById('statClamped').textContent = clampedCount;
+  document.getElementById('statX').textContent = bounds.x.max === null ? '—' : formatNumber(bounds.x.max);
+  document.getElementById('statY').textContent = bounds.y.max === null ? '—' : formatNumber(bounds.y.max);
+  document.getElementById('statZ').textContent = bounds.z.max === null ? '—' : formatNumber(bounds.z.max);
+  document.getElementById('statMode').textContent = 'ABS';
+  updateBoundsDisplay(bounds);
+}
+
 function clampGCode(text, limits) {
   const lines = text.split('\n');
   let absMode = true;
@@ -573,7 +590,9 @@ function clampGCode(text, limits) {
   return { output: out.join('\n'), clampedCount };
 }
 
-function loadGCode(text, filename) {
+function loadGCode(text, filename, token = activeLoadToken) {
+  if (token !== activeLoadToken) return;
+
   const trimmed = text.trim();
   if (!trimmed) {
     setStatus('No G-code content found.');
@@ -590,25 +609,19 @@ function loadGCode(text, filename) {
 
   const limits = readLimits();
   const result = clampGCode(text, limits);
-  const bounds = inspectBounds(text);
   currentText = result.output;
   document.getElementById('outputPreview').value = currentText;
 
   document.getElementById('downloadBtn').disabled = false;
   document.getElementById('statsPanel').style.display = '';
-  document.getElementById('statLines').textContent = text.split('\n').length;
-  document.getElementById('statClamped').textContent = result.clampedCount;
-  document.getElementById('statX').textContent = bounds.x.max === null ? '—' : formatNumber(bounds.x.max);
-  document.getElementById('statY').textContent = bounds.y.max === null ? '—' : formatNumber(bounds.y.max);
-  document.getElementById('statZ').textContent = bounds.z.max === null ? '—' : formatNumber(bounds.z.max);
-  document.getElementById('statMode').textContent = 'ABS';
-  updateBoundsDisplay(bounds);
+  refreshStatsForText(currentText, result.clampedCount);
   updateLimitSummary();
   setStatus(`Loaded ${lastFileName} — ${result.clampedCount} coordinate clamp${result.clampedCount === 1 ? '' : 's'}`);
 }
 
 function loadFromTextarea() {
-  loadGCode(document.getElementById('gcodeInput').value, 'pasted-gcode.nc');
+  const token = beginLoad();
+  loadGCode(document.getElementById('gcodeInput').value, 'pasted-gcode.nc', token);
 }
 
 function applyLimits() {
@@ -622,7 +635,7 @@ function applyLimits() {
   currentText = result.output;
   document.getElementById('outputPreview').value = currentText;
   document.getElementById('downloadBtn').disabled = false;
-  document.getElementById('statClamped').textContent = result.clampedCount;
+  refreshStatsForText(currentText, result.clampedCount);
   setStatus(`${result.clampedCount} coordinate value${result.clampedCount === 1 ? '' : 's'} clamped to the current limits.`);
   updateLimitSummary();
 }
@@ -631,6 +644,7 @@ function revertToOriginal() {
   if (!originalText) return;
   currentText = originalText;
   document.getElementById('outputPreview').value = currentText;
+  refreshStatsForText(currentText, 0);
   setStatus('Restored the original G-code.');
 }
 
@@ -653,9 +667,11 @@ const fileInput = document.getElementById('fileInput');
 fileInput.addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
+  const token = beginLoad();
   const reader = new FileReader();
   reader.onload = ev => {
-    loadGCode(ev.target.result, file.name);
+    if (token !== activeLoadToken) return;
+    loadGCode(ev.target.result, file.name, token);
   };
   reader.readAsText(file);
   fileInput.value = '';
@@ -666,15 +682,32 @@ document.addEventListener('drop', e => {
   e.preventDefault();
   const file = e.dataTransfer.files[0];
   if (!file) return;
+  if (e.target && e.target.closest && e.target.closest('#dropZone')) return;
+  const token = beginLoad();
   const reader = new FileReader();
   reader.onload = ev => {
-    loadGCode(ev.target.result, file.name);
+    if (token !== activeLoadToken) return;
+    loadGCode(ev.target.result, file.name, token);
   };
   reader.readAsText(file);
 });
+
 dropZone.addEventListener('dragover', () => dropZone.classList.add('drag-over'));
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-dropZone.addEventListener('drop', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  e.stopPropagation();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const token = beginLoad();
+  const reader = new FileReader();
+  reader.onload = ev => {
+    if (token !== activeLoadToken) return;
+    loadGCode(ev.target.result, file.name, token);
+  };
+  reader.readAsText(file);
+});
 
 updateLimitSummary();
 </script>
